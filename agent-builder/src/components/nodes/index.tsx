@@ -85,6 +85,11 @@ export const nodeFieldConfigs: {
   },
   Output: {
     message: { name: "Message", type: "text" },
+    exportType: {
+      name: "Export Option",
+      type: "select",
+      options: ["Display only", "Export as Document", "Export as CSV"],
+    },
   },
   "Web Scraping": {
     url: { name: "Website URL", type: "text" },

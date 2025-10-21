@@ -678,13 +678,14 @@ export default function AgentBuilder() {
         continue;
       }
 
-      // Execute Output nodes (display the output)
+      // Execute Output nodes (display the output and optionally export as document)
       if (node.data.nodeType === "Output") {
         const params = node.data.parameters as { [key: string]: string };
         const outputValue = replaceTemplateVariables(
-          params?.output || "",
+          params?.message || params?.output || "",
           node.id
         );
+        const exportType = params?.exportType || "Display only";
 
         setNodeOutputs((prev) => ({
           ...prev,
@@ -703,6 +704,67 @@ export default function AgentBuilder() {
             timestamp,
           },
         ]);
+
+        // Export as document if selected
+        if (exportType === "Export as Document") {
+          const blob = new Blob([outputValue], { type: "text/plain" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `output_${node.data.label || node.id}.txt`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
+        // Export as CSV if selected
+        if (exportType === "Export as CSV") {
+          let csv = "";
+          try {
+            const json = JSON.parse(outputValue);
+            let rows = Array.isArray(json) ? json : [json];
+            if (rows.length === 0) rows = [{}];
+            const columns = Array.from(
+              rows.reduce((cols, row) => {
+                Object.keys(row).forEach((k) => cols.add(k));
+                return cols;
+              }, new Set<string>())
+            );
+            csv += columns.join(",") + "\n";
+            for (const row of rows) {
+              const rec = row as Record<string, any>;
+              csv +=
+                columns
+                  .map((col) => {
+                    let val = rec[col];
+                    if (typeof val === "object" && val !== null)
+                      val = JSON.stringify(val);
+                    if (val === undefined) val = "";
+                    return `"${String(val).replace(/"/g, '""')}"`;
+                  })
+                  .join(",") + "\n";
+            }
+            const blob = new Blob([csv], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `output_${node.data.label || node.id}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          } catch {
+            setLogMessages((prev) => [
+              ...prev,
+              {
+                nodeId: node.id,
+                nodeName: node.data.label as string,
+                output: `❌ CSV Export failed: Output is not valid JSON array/object`,
+                timestamp,
+              },
+            ]);
+          }
+        }
         continue;
       }
 
@@ -1285,7 +1347,13 @@ export default function AgentBuilder() {
   };
 
   return (
-    <div style={{ width: "100%", height: "100vh", background: "#0a0a0a" }}>
+    <div
+      style={{
+        width: "100%",
+        height: "100vh",
+        background: "#0a0a0a",
+      }}
+    >
       <style>{`
         .react-flow__node-default {
           background: #2d2d2d;
@@ -1388,11 +1456,13 @@ export default function AgentBuilder() {
       <div
         style={{
           position: "absolute",
-          top: 15,
-          left: 310,
+          top: 215,
+          left: 20,
           zIndex: 100,
           display: "flex",
+          flexDirection: "column", // 👈 stack buttons vertically
           gap: "10px",
+          alignItems: "flex-start", // optional: align buttons to left edge
         }}
       >
         <button
