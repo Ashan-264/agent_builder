@@ -231,8 +231,11 @@ export default function AgentBuilder() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          systemPrompt: nodeParameters.systemPrompt || "",
+          systemInstruction: nodeParameters.systemInstruction || "",
           userMessage: nodeParameters.userMessage || "",
+          temperature: nodeParameters.temperature || "0.7",
+          maxOutputTokens: nodeParameters.maxOutputTokens || "1024",
+          topK: nodeParameters.topK || "40",
         }),
       });
 
@@ -505,8 +508,11 @@ export default function AgentBuilder() {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              systemPrompt: params?.systemPrompt || "",
+              systemInstruction: params?.systemInstruction || "",
               userMessage: params?.userMessage || "",
+              temperature: params?.temperature || "0.7",
+              maxOutputTokens: params?.maxOutputTokens || "1024",
+              topK: params?.topK || "40",
             }),
           });
 
@@ -802,6 +808,93 @@ export default function AgentBuilder() {
     setNodeName("");
   };
 
+  // Export workflow to JSON
+  const exportWorkflow = () => {
+    const workflow = {
+      nodes: nodes,
+      edges: edges,
+      nodeIdCounter: nodeIdRef.current,
+      version: "1.0",
+      exportedAt: new Date().toISOString(),
+    };
+
+    const dataStr = JSON.stringify(workflow, null, 2);
+    const dataBlob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `workflow_${new Date().getTime()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    // Log success
+    const timestamp = new Date();
+    setLogMessages((prev) => [
+      ...prev,
+      {
+        nodeId: "system",
+        nodeName: "System",
+        output: `✅ Workflow exported successfully with ${nodes.length} nodes and ${edges.length} connections`,
+        timestamp,
+      },
+    ]);
+  };
+
+  // Import workflow from JSON
+  const importWorkflow = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const workflow = JSON.parse(content);
+
+        // Validate workflow structure
+        if (!workflow.nodes || !workflow.edges) {
+          throw new Error("Invalid workflow file format");
+        }
+
+        // Load nodes and edges
+        setNodes(workflow.nodes);
+        setEdges(workflow.edges);
+        
+        // Update node ID counter to avoid ID conflicts
+        if (workflow.nodeIdCounter !== undefined) {
+          nodeIdRef.current = workflow.nodeIdCounter;
+        }
+
+        // Log success
+        const timestamp = new Date();
+        setLogMessages([
+          {
+            nodeId: "system",
+            nodeName: "System",
+            output: `✅ Workflow imported successfully: ${workflow.nodes.length} nodes and ${workflow.edges.length} connections loaded`,
+            timestamp,
+          },
+        ]);
+      } catch (error) {
+        const timestamp = new Date();
+        setLogMessages([
+          {
+            nodeId: "system",
+            nodeName: "System",
+            output: `❌ Failed to import workflow: ${(error as Error).message}`,
+            timestamp,
+          },
+        ]);
+      }
+    };
+    reader.readAsText(file);
+    
+    // Reset the input so the same file can be selected again
+    event.target.value = "";
+  };
+
   return (
     <div style={{ width: "100%", height: "100vh", background: "#0a0a0a" }}>
       <style>{`
@@ -902,13 +995,15 @@ export default function AgentBuilder() {
         </div>
       </div>
 
-      {/* Run button */}
+      {/* Action buttons */}
       <div
         style={{
           position: "absolute",
           top: 15,
           left: 310,
-          zIndex: 4,
+          zIndex: 100,
+          display: "flex",
+          gap: "10px",
         }}
       >
         <button
@@ -938,6 +1033,68 @@ export default function AgentBuilder() {
         >
           ▶ Run Flow
         </button>
+
+        <button
+          onClick={exportWorkflow}
+          style={{
+            padding: "12px 24px",
+            background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            cursor: "pointer",
+            fontSize: "15px",
+            fontWeight: "600",
+            boxShadow: "0 4px 12px rgba(59, 130, 246, 0.4)",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-2px)";
+            e.currentTarget.style.boxShadow =
+              "0 6px 16px rgba(59, 130, 246, 0.5)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.boxShadow =
+              "0 4px 12px rgba(59, 130, 246, 0.4)";
+          }}
+        >
+          💾 Export
+        </button>
+
+        <label
+          style={{
+            padding: "12px 24px",
+            background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            cursor: "pointer",
+            fontSize: "15px",
+            fontWeight: "600",
+            boxShadow: "0 4px 12px rgba(139, 92, 246, 0.4)",
+            transition: "all 0.2s",
+            display: "inline-block",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-2px)";
+            e.currentTarget.style.boxShadow =
+              "0 6px 16px rgba(139, 92, 246, 0.5)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.boxShadow =
+              "0 4px 12px rgba(139, 92, 246, 0.4)";
+          }}
+        >
+          📂 Import
+          <input
+            type="file"
+            accept=".json"
+            onChange={importWorkflow}
+            style={{ display: "none" }}
+          />
+        </label>
       </div>
 
       {editingNode && (

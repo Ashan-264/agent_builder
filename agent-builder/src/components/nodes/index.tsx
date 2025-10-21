@@ -73,8 +73,11 @@ export const nodeFieldConfigs: {
       type: "select",
       options: ["Gemini"],
     },
-    systemPrompt: { name: "System Prompt", type: "textarea" },
+    systemInstruction: { name: "System Instruction", type: "textarea" },
     userMessage: { name: "User Message", type: "textarea" },
+    temperature: { name: "Temperature (0-1)", type: "text" },
+    maxOutputTokens: { name: "Max Output Tokens", type: "text" },
+    topK: { name: "Top K", type: "text" },
   },
   Tool: {
     endpoint: { name: "Endpoint", type: "text" },
