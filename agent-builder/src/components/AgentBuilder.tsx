@@ -88,6 +88,11 @@ export default function AgentBuilder() {
     Array<{ nodeId: string; nodeName: string; output: string; timestamp: Date }>
   >([]);
   const [showLogs, setShowLogs] = useState(true);
+  const [nodeOutputs, setNodeOutputs] = useState<{
+    [nodeId: string]: { nodeName: string; output: unknown };
+  }>({});
+  const [showOutputPicker, setShowOutputPicker] = useState(false);
+  const [activeTextarea, setActiveTextarea] = useState<string | null>(null);
   const nodeIdRef = useRef(0);
 
   // Handle keyboard delete for nodes and edges
@@ -455,6 +460,88 @@ export default function AgentBuilder() {
     }
   };
 
+  // Replace template variables like {{NodeName.output}} with actual values
+  const replaceTemplateVariables = (
+    text: string,
+    currentNodeId: string
+  ): string => {
+    if (!text) return text;
+
+    // Find all template variables
+    const regex = /\{\{([^}]+)\}\}/g;
+    let result = text;
+    const matches = text.matchAll(regex);
+
+    for (const match of matches) {
+      const variable = match[1].trim(); // e.g., "Node1.output" or "Node1.name"
+      const [nodeName, property] = variable.split(".");
+
+      // Find the node by name
+      const sourceNode = nodes.find((n) => n.data.label === nodeName);
+      if (!sourceNode) continue;
+
+      // Check if this node comes before the current node in execution order
+      const execOrder = getExecutionOrder();
+      if (!execOrder) continue;
+
+      const sourceIndex = execOrder.findIndex((n) => n.id === sourceNode.id);
+      const currentIndex = execOrder.findIndex((n) => n.id === currentNodeId);
+
+      // Only allow references to previous nodes
+      if (
+        sourceIndex === -1 ||
+        currentIndex === -1 ||
+        sourceIndex >= currentIndex
+      ) {
+        continue;
+      }
+
+      // Get the output for this node
+      const nodeOutput = nodeOutputs[sourceNode.id];
+      if (!nodeOutput) continue;
+
+      let replacement = "";
+
+      if (property === "output") {
+        // Return the entire output
+        replacement =
+          typeof nodeOutput.output === "object"
+            ? JSON.stringify(nodeOutput.output)
+            : String(nodeOutput.output);
+      } else {
+        // Try to access nested property
+        if (
+          typeof nodeOutput.output === "object" &&
+          nodeOutput.output !== null
+        ) {
+          const outputObj = nodeOutput.output as Record<string, unknown>;
+          const value = outputObj[property];
+          replacement =
+            value !== undefined
+              ? typeof value === "object"
+                ? JSON.stringify(value)
+                : String(value)
+              : "";
+        }
+      }
+
+      result = result.replace(match[0], replacement);
+    }
+
+    return result;
+  };
+
+  // Insert template variable into active textarea
+  const insertTemplateVariable = (template: string) => {
+    if (!activeTextarea) return;
+
+    const currentValue = nodeParameters[activeTextarea] || "";
+    setNodeParameters({
+      ...nodeParameters,
+      [activeTextarea]: currentValue + template,
+    });
+  };
+
   // Function to traverse the graph and get execution order
   const getExecutionOrder = (): Node<NodeData>[] | null => {
     // Find Start node
@@ -566,19 +653,107 @@ export default function AgentBuilder() {
         continue;
       }
 
+      // Execute Input nodes (just store the input value)
+      if (node.data.nodeType === "Input") {
+        const params = node.data.parameters as { [key: string]: string };
+        const inputValue = params?.input || "";
+
+        setNodeOutputs((prev) => ({
+          ...prev,
+          [node.id]: {
+            nodeName: node.data.label as string,
+            output: inputValue,
+          },
+        }));
+
+        setLogMessages((prev) => [
+          ...prev,
+          {
+            nodeId: node.id,
+            nodeName: node.data.label as string,
+            output: `📥 Input: ${inputValue}`,
+            timestamp,
+          },
+        ]);
+        continue;
+      }
+
+      // Execute Output nodes (display the output)
+      if (node.data.nodeType === "Output") {
+        const params = node.data.parameters as { [key: string]: string };
+        const outputValue = replaceTemplateVariables(
+          params?.output || "",
+          node.id
+        );
+
+        setNodeOutputs((prev) => ({
+          ...prev,
+          [node.id]: {
+            nodeName: node.data.label as string,
+            output: outputValue,
+          },
+        }));
+
+        setLogMessages((prev) => [
+          ...prev,
+          {
+            nodeId: node.id,
+            nodeName: node.data.label as string,
+            output: `📤 Output: ${outputValue}`,
+            timestamp,
+          },
+        ]);
+        continue;
+      }
+
+      // Execute Text Note nodes
+      if (node.data.nodeType === "Text Note") {
+        const params = node.data.parameters as { [key: string]: string };
+        const noteText = params?.text || "";
+
+        setNodeOutputs((prev) => ({
+          ...prev,
+          [node.id]: {
+            nodeName: node.data.label as string,
+            output: noteText,
+          },
+        }));
+
+        setLogMessages((prev) => [
+          ...prev,
+          {
+            nodeId: node.id,
+            nodeName: node.data.label as string,
+            output: `📝 Note: ${noteText}`,
+            timestamp,
+          },
+        ]);
+        continue;
+      }
+
       // Execute LLM nodes
       if (node.data.nodeType === "LLM") {
         const params = node.data.parameters as { [key: string]: string };
 
         try {
+          // Replace template variables in parameters
+          const systemInstruction = replaceTemplateVariables(
+            params?.systemInstruction || "",
+            node.id
+          );
+          const userMessage = replaceTemplateVariables(
+            params?.userMessage || "",
+            node.id
+          );
+
           const response = await fetch("/api/gemini", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              systemInstruction: params?.systemInstruction || "",
-              userMessage: params?.userMessage || "",
+              systemInstruction,
+              userMessage,
               temperature: params?.temperature || "0.7",
               maxOutputTokens: params?.maxOutputTokens || "1024",
               topK: params?.topK || "40",
@@ -587,6 +762,15 @@ export default function AgentBuilder() {
 
           const data = await response.json();
           if (response.ok) {
+            // Save output for template variables
+            setNodeOutputs((prev) => ({
+              ...prev,
+              [node.id]: {
+                nodeName: node.data.label as string,
+                output: data.output,
+              },
+            }));
+
             setLogMessages((prev) => [
               ...prev,
               {
@@ -631,14 +815,21 @@ export default function AgentBuilder() {
         const params = node.data.parameters as { [key: string]: string };
 
         try {
+          // Replace template variables in parameters
+          const url = replaceTemplateVariables(params?.url || "", node.id);
+          const instruction = replaceTemplateVariables(
+            params?.instruction || "",
+            node.id
+          );
+
           const response = await fetch("/api/web-scrape", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              url: params?.url || "",
-              instruction: params?.instruction || "",
+              url,
+              instruction,
             }),
           });
 
@@ -649,6 +840,15 @@ export default function AgentBuilder() {
             output += `Instruction: ${data.instruction}\n\n`;
             output += `--- Extracted Data ---\n`;
             output += JSON.stringify(data.data, null, 2);
+
+            // Save output for template variables
+            setNodeOutputs((prev) => ({
+              ...prev,
+              [node.id]: {
+                nodeName: node.data.label as string,
+                output: data.data,
+              },
+            }));
 
             setLogMessages((prev) => [
               ...prev,
@@ -696,6 +896,19 @@ export default function AgentBuilder() {
         const params = node.data.parameters as { [key: string]: string };
 
         try {
+          // Replace template variables in parameters
+          const text = replaceTemplateVariables(params?.text || "", node.id);
+          const source = replaceTemplateVariables(
+            params?.source || "",
+            node.id
+          );
+          const info = replaceTemplateVariables(params?.info || "", node.id);
+          const tag = replaceTemplateVariables(params?.tag || "", node.id);
+          const workflow = replaceTemplateVariables(
+            params?.workflow || "",
+            node.id
+          );
+
           const response = await fetch("/api/pinecone", {
             method: "POST",
             headers: {
@@ -703,11 +916,11 @@ export default function AgentBuilder() {
             },
             body: JSON.stringify({
               action: "embed",
-              text: params?.text || "",
-              source: params?.source || "",
-              info: params?.info || "",
-              tag: params?.tag || "",
-              workflow: params?.workflow || "",
+              text,
+              source,
+              info,
+              tag,
+              workflow,
               nodeId: node.id,
             }),
           });
@@ -719,6 +932,19 @@ export default function AgentBuilder() {
             output += `Dimension: ${data.dimension}\n\n`;
             output += `--- Metadata ---\n`;
             output += JSON.stringify(data.metadata, null, 2);
+
+            // Save output for template variables
+            setNodeOutputs((prev) => ({
+              ...prev,
+              [node.id]: {
+                nodeName: node.data.label as string,
+                output: {
+                  id: data.id,
+                  dimension: data.dimension,
+                  metadata: data.metadata,
+                },
+              },
+            }));
 
             setLogMessages((prev) => [
               ...prev,
@@ -766,6 +992,9 @@ export default function AgentBuilder() {
         const params = node.data.parameters as { [key: string]: string };
 
         try {
+          // Replace template variables in parameters
+          const query = replaceTemplateVariables(params?.query || "", node.id);
+
           const response = await fetch("/api/pinecone", {
             method: "POST",
             headers: {
@@ -773,7 +1002,7 @@ export default function AgentBuilder() {
             },
             body: JSON.stringify({
               action: "search",
-              query: params?.query || "",
+              query,
               topK: params?.topK || "5",
             }),
           });
@@ -802,6 +1031,19 @@ export default function AgentBuilder() {
                 output += `\n`;
               }
             );
+
+            // Save output for template variables
+            setNodeOutputs((prev) => ({
+              ...prev,
+              [node.id]: {
+                nodeName: node.data.label as string,
+                output: {
+                  query: data.query,
+                  resultsCount: data.resultsCount,
+                  matches: data.matches,
+                },
+              },
+            }));
 
             setLogMessages((prev) => [
               ...prev,
@@ -849,13 +1091,19 @@ export default function AgentBuilder() {
         const params = node.data.parameters as { [key: string]: string };
 
         try {
+          // Replace template variables in parameters
+          const inputText = replaceTemplateVariables(
+            params?.inputText || "",
+            node.id
+          );
+
           const response = await fetch("/api/parse-json", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              inputText: params?.inputText || "",
+              inputText,
               jsonSchema: params?.jsonSchema || "",
             }),
           });
@@ -865,6 +1113,15 @@ export default function AgentBuilder() {
             let output = `✅ JSON Parsing Complete\n\n`;
             output += `--- Parsed Data ---\n`;
             output += JSON.stringify(data.parsedData, null, 2);
+
+            // Save output for template variables
+            setNodeOutputs((prev) => ({
+              ...prev,
+              [node.id]: {
+                nodeName: node.data.label as string,
+                output: data.parsedData,
+              },
+            }));
 
             setLogMessages((prev) => [
               ...prev,
@@ -1445,6 +1702,10 @@ export default function AgentBuilder() {
                               [fieldKey]: e.target.value,
                             })
                           }
+                          onFocus={() => {
+                            setActiveTextarea(fieldKey);
+                            setShowOutputPicker(true);
+                          }}
                           placeholder={`Enter ${fieldConfig.name.toLowerCase()}...`}
                           rows={4}
                           style={{
@@ -2083,6 +2344,237 @@ export default function AgentBuilder() {
         >
           📋 Logs
         </button>
+      )}
+
+      {/* Output Picker Sidebar */}
+      {showOutputPicker && activeTextarea && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            width: "320px",
+            height: "100%",
+            background: "rgba(20, 20, 20, 0.98)",
+            borderLeft: "1px solid #333",
+            display: "flex",
+            flexDirection: "column",
+            zIndex: 50,
+            boxShadow: "-4px 0 12px rgba(0, 0, 0, 0.6)",
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "15px",
+              borderBottom: "1px solid #333",
+            }}
+          >
+            <h3
+              style={{
+                margin: 0,
+                fontSize: "16px",
+                fontWeight: "600",
+                color: "#e5e5e5",
+              }}
+            >
+              🔗 Output Parameters
+            </h3>
+            <button
+              onClick={() => {
+                setShowOutputPicker(false);
+                setActiveTextarea(null);
+              }}
+              style={{
+                background: "transparent",
+                border: "1px solid #444",
+                borderRadius: "4px",
+                color: "#e5e5e5",
+                cursor: "pointer",
+                padding: "4px 8px",
+                fontSize: "14px",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Content */}
+          <div
+            style={{
+              flex: 1,
+              overflow: "auto",
+              padding: "15px",
+            }}
+          >
+            {(() => {
+              // Get current node from expanded node
+              const currentNode = expandedNode
+                ? nodes.find((n) => n.id === expandedNode)
+                : null;
+
+              if (!currentNode) {
+                return (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      color: "#666",
+                      fontSize: "14px",
+                      marginTop: "40px",
+                    }}
+                  >
+                    No node selected
+                  </div>
+                );
+              }
+
+              // Get execution order
+              const execOrder = getExecutionOrder();
+              if (!execOrder) {
+                return (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      color: "#666",
+                      fontSize: "14px",
+                      marginTop: "40px",
+                    }}
+                  >
+                    Cannot determine execution order
+                  </div>
+                );
+              }
+
+              // Find current node index
+              const currentIndex = execOrder.findIndex(
+                (n) => n.id === currentNode.id
+              );
+
+              // Get previous nodes
+              const previousNodes =
+                currentIndex > 0 ? execOrder.slice(0, currentIndex) : [];
+
+              if (previousNodes.length === 0) {
+                return (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      color: "#666",
+                      fontSize: "14px",
+                      marginTop: "40px",
+                    }}
+                  >
+                    No previous nodes available
+                  </div>
+                );
+              }
+
+              // Render available outputs
+              return previousNodes.map((node) => {
+                const output = nodeOutputs[node.id];
+                const nodeName = node.data.label;
+
+                return (
+                  <div
+                    key={node.id}
+                    style={{
+                      marginBottom: "15px",
+                      background: "#0a0a0a",
+                      border: "1px solid #444",
+                      borderRadius: "8px",
+                      padding: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        color: "#a855f7",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      {nodeName}
+                    </div>
+
+                    {/* Full output option */}
+                    <button
+                      onClick={() => {
+                        const template = `{{${nodeName}.output}}`;
+                        insertTemplateVariable(template);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "6px 10px",
+                        background: "#2d2d2d",
+                        border: "1px solid #444",
+                        borderRadius: "4px",
+                        color: "#e5e5e5",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        textAlign: "left",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      📄 output (full)
+                    </button>
+
+                    {/* Property options if output is an object */}
+                    {output &&
+                      typeof output.output === "object" &&
+                      output.output !== null && (
+                        <>
+                          {Object.keys(
+                            output.output as Record<string, unknown>
+                          ).map((key) => (
+                            <button
+                              key={key}
+                              onClick={() => {
+                                const template = `{{${nodeName}.${key}}}`;
+                                insertTemplateVariable(template);
+                              }}
+                              style={{
+                                width: "100%",
+                                padding: "6px 10px",
+                                background: "#2d2d2d",
+                                border: "1px solid #444",
+                                borderRadius: "4px",
+                                color: "#e5e5e5",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                                textAlign: "left",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              🔹 {key}
+                            </button>
+                          ))}
+                        </>
+                      )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
+          {/* Info footer */}
+          <div
+            style={{
+              padding: "15px",
+              borderTop: "1px solid #333",
+              fontSize: "11px",
+              color: "#666",
+            }}
+          >
+            Click a parameter to insert it into your field. Use syntax:{" "}
+            <code style={{ color: "#a855f7" }}>
+              {"{"}
+              {"{"}NodeName.output{"}}"}
+            </code>
+          </div>
+        </div>
       )}
     </div>
   );
