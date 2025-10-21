@@ -74,8 +74,7 @@ Example format:
 
     const data = await response.json();
     let schemaText =
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "No schema generated";
+      data.candidates?.[0]?.content?.parts?.[0]?.text || "No schema generated";
 
     // Clean up the response - remove markdown code blocks if present
     schemaText = schemaText.replace(/```json\n?/g, "").replace(/```\n?/g, "");

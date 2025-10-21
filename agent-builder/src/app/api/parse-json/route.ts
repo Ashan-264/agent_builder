@@ -95,9 +95,9 @@ Return ONLY the JSON object, no explanations or markdown formatting.`,
       );
     }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       parsedData: parsedJSON,
-      rawOutput: parsedText 
+      rawOutput: parsedText,
     });
   } catch (error) {
     console.error("Error parsing JSON:", error);

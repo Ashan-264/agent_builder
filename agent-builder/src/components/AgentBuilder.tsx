@@ -39,8 +39,6 @@ const nodeTypes: NodeTypeOption[] = [
   { value: "End", label: "End", description: "Exit point of flow" },
   { value: "Input", label: "Input", description: "Start the flow" },
   { value: "LLM", label: "LLM", description: "Reason / generate" },
-  { value: "Tool", label: "Tool", description: "Act / execute" },
-  { value: "Memory", label: "Memory", description: "Remember context" },
   { value: "Output", label: "Output", description: "End the flow" },
   {
     value: "Web Scraping",
@@ -1732,7 +1730,9 @@ export default function AgentBuilder() {
                   <div style={{ marginTop: "20px" }}>
                     <button
                       onClick={generateSchema}
-                      disabled={isSchemaGenerating || !nodeParameters.schemaDescription}
+                      disabled={
+                        isSchemaGenerating || !nodeParameters.schemaDescription
+                      }
                       style={{
                         width: "100%",
                         padding: "10px 18px",
@@ -1741,13 +1741,15 @@ export default function AgentBuilder() {
                         border: "none",
                         borderRadius: "6px",
                         cursor:
-                          isSchemaGenerating || !nodeParameters.schemaDescription
+                          isSchemaGenerating ||
+                          !nodeParameters.schemaDescription
                             ? "not-allowed"
                             : "pointer",
                         fontSize: "14px",
                         fontWeight: "500",
                         opacity:
-                          isSchemaGenerating || !nodeParameters.schemaDescription
+                          isSchemaGenerating ||
+                          !nodeParameters.schemaDescription
                             ? 0.6
                             : 1,
                         marginBottom: "10px",

@@ -21,8 +21,6 @@ export const nodeColors = {
   End: { bg: "#4a1a1a", border: "#ef4444", badge: "#ef4444", icon: "⏹️" },
   Input: { bg: "#1e3a5f", border: "#3b82f6", badge: "#3b82f6", icon: "🔵" },
   LLM: { bg: "#3d2463", border: "#a855f7", badge: "#a855f7", icon: "🧠" },
-  Tool: { bg: "#4a2c1a", border: "#f97316", badge: "#f97316", icon: "🔧" },
-  Memory: { bg: "#1e4a2e", border: "#22c55e", badge: "#22c55e", icon: "💾" },
   Output: { bg: "#4a1e35", border: "#ec4899", badge: "#ec4899", icon: "📤" },
   "Web Scraping": {
     bg: "#1a3a4a",
@@ -85,14 +83,6 @@ export const nodeFieldConfigs: {
     maxOutputTokens: { name: "Max Output Tokens", type: "text" },
     topK: { name: "Top K", type: "text" },
   },
-  Tool: {
-    endpoint: { name: "Endpoint", type: "text" },
-    input: { name: "Input", type: "text" },
-  },
-  Memory: {
-    key: { name: "Key", type: "text" },
-    value: { name: "Value", type: "text" },
-  },
   Output: {
     message: { name: "Message", type: "text" },
   },
@@ -145,14 +135,6 @@ export const LLMNode: React.FC<NodeProps> = ({ data, id }) => (
   <BaseNode data={data} id={id} colors={nodeColors.LLM} />
 );
 
-export const ToolNode: React.FC<NodeProps> = ({ data, id }) => (
-  <BaseNode data={data} id={id} colors={nodeColors.Tool} />
-);
-
-export const MemoryNode: React.FC<NodeProps> = ({ data, id }) => (
-  <BaseNode data={data} id={id} colors={nodeColors.Memory} />
-);
-
 export const OutputNode: React.FC<NodeProps> = ({ data, id }) => (
   <BaseNode data={data} id={id} colors={nodeColors.Output} />
 );
@@ -187,8 +169,6 @@ export const customNodeTypes = {
   End: EndNode,
   Input: InputNode,
   LLM: LLMNode,
-  Tool: ToolNode,
-  Memory: MemoryNode,
   Output: OutputNode,
   "Web Scraping": WebScrapingNode,
   "LLM JSON Parser": LLMJSONParserNode,
