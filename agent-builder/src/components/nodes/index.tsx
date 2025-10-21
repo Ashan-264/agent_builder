@@ -30,6 +30,12 @@ export const nodeColors = {
     badge: "#06b6d4",
     icon: "🌐",
   },
+  "LLM JSON Parser": {
+    bg: "#2a4a3a",
+    border: "#10b981",
+    badge: "#10b981",
+    icon: "📝",
+  },
   "Structured Output": {
     bg: "#3a2a4a",
     border: "#8b5cf6",
@@ -94,6 +100,14 @@ export const nodeFieldConfigs: {
     url: { name: "Website URL", type: "text" },
     instruction: { name: "What to Extract", type: "textarea" },
   },
+  "LLM JSON Parser": {
+    inputText: { name: "Input Text", type: "textarea" },
+    schemaDescription: {
+      name: "Schema Description (natural language)",
+      type: "textarea",
+    },
+    jsonSchema: { name: "JSON Schema (editable)", type: "textarea" },
+  },
   "Structured Output": {
     schema: { name: "JSON Schema", type: "textarea" },
     inputData: { name: "Input Data", type: "textarea" },
@@ -147,6 +161,10 @@ export const WebScrapingNode: React.FC<NodeProps> = ({ data, id }) => (
   <BaseNode data={data} id={id} colors={nodeColors["Web Scraping"]} />
 );
 
+export const LLMJSONParserNode: React.FC<NodeProps> = ({ data, id }) => (
+  <BaseNode data={data} id={id} colors={nodeColors["LLM JSON Parser"]} />
+);
+
 export const StructuredOutputNode: React.FC<NodeProps> = ({ data, id }) => (
   <BaseNode data={data} id={id} colors={nodeColors["Structured Output"]} />
 );
@@ -173,6 +191,7 @@ export const customNodeTypes = {
   Memory: MemoryNode,
   Output: OutputNode,
   "Web Scraping": WebScrapingNode,
+  "LLM JSON Parser": LLMJSONParserNode,
   "Structured Output": StructuredOutputNode,
   "Embedding Generator": EmbeddingGeneratorNode,
   "Similarity Search": SimilaritySearchNode,

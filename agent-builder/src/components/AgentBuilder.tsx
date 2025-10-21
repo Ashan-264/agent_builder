@@ -48,6 +48,11 @@ const nodeTypes: NodeTypeOption[] = [
     description: "Scrape & summarize website",
   },
   {
+    value: "LLM JSON Parser",
+    label: "LLM JSON Parser",
+    description: "Parse text to JSON schema",
+  },
+  {
     value: "Structured Output",
     label: "Structured Output",
     description: "LLM schema parser",
@@ -80,6 +85,7 @@ export default function AgentBuilder() {
   }>({});
   const [testOutput, setTestOutput] = useState<string>("");
   const [isTestLoading, setIsTestLoading] = useState(false);
+  const [isSchemaGenerating, setIsSchemaGenerating] = useState(false);
   const [logMessages, setLogMessages] = useState<
     Array<{ nodeId: string; nodeName: string; output: string; timestamp: Date }>
   >([]);
@@ -377,6 +383,71 @@ export default function AgentBuilder() {
       } else {
         setTestOutput(
           `Error: ${data.error || data.details || "Failed to search"}`
+        );
+      }
+    } catch (error) {
+      setTestOutput(`Error: ${(error as Error).message}`);
+    } finally {
+      setIsTestLoading(false);
+    }
+  };
+
+  // Generate JSON Schema from natural language description
+  const generateSchema = async () => {
+    setIsSchemaGenerating(true);
+    try {
+      const response = await fetch("/api/generate-schema", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          description: nodeParameters.schemaDescription || "",
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setNodeParameters({
+          ...nodeParameters,
+          jsonSchema: data.schema,
+        });
+      } else {
+        alert(`Error generating schema: ${data.error || "Unknown error"}`);
+      }
+    } catch (error) {
+      alert(`Error: ${(error as Error).message}`);
+    } finally {
+      setIsSchemaGenerating(false);
+    }
+  };
+
+  // Test LLM JSON Parser node
+  const testLLMJSONParserNode = async () => {
+    setIsTestLoading(true);
+    setTestOutput("");
+    try {
+      const response = await fetch("/api/parse-json", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          inputText: nodeParameters.inputText || "",
+          jsonSchema: nodeParameters.jsonSchema || "",
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        let output = `✅ JSON Parsing Complete\n\n`;
+        output += `--- Parsed Data ---\n`;
+        output += JSON.stringify(data.parsedData, null, 2);
+
+        setTestOutput(output);
+      } else {
+        setTestOutput(
+          `Error: ${data.error || data.details || "Failed to parse JSON"}`
         );
       }
     } catch (error) {
@@ -774,6 +845,69 @@ export default function AgentBuilder() {
           return;
         }
       }
+
+      // Execute LLM JSON Parser nodes
+      if (node.data.nodeType === "LLM JSON Parser") {
+        const params = node.data.parameters as { [key: string]: string };
+
+        try {
+          const response = await fetch("/api/parse-json", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              inputText: params?.inputText || "",
+              jsonSchema: params?.jsonSchema || "",
+            }),
+          });
+
+          const data = await response.json();
+          if (response.ok) {
+            let output = `✅ JSON Parsing Complete\n\n`;
+            output += `--- Parsed Data ---\n`;
+            output += JSON.stringify(data.parsedData, null, 2);
+
+            setLogMessages((prev) => [
+              ...prev,
+              {
+                nodeId: node.id,
+                nodeName: node.data.label as string,
+                output: output,
+                timestamp,
+              },
+            ]);
+          } else {
+            const errorMsg = `Error: ${
+              data.error || data.details || "Failed to parse JSON"
+            }`;
+            setLogMessages((prev) => [
+              ...prev,
+              {
+                nodeId: node.id,
+                nodeName: node.data.label as string,
+                output: errorMsg,
+                timestamp,
+              },
+            ]);
+            // Stop execution on error
+            return;
+          }
+        } catch (error) {
+          const errorMsg = `Error: ${(error as Error).message}`;
+          setLogMessages((prev) => [
+            ...prev,
+            {
+              nodeId: node.id,
+              nodeName: node.data.label as string,
+              output: errorMsg,
+              timestamp,
+            },
+          ]);
+          // Stop execution on error
+          return;
+        }
+      }
     }
   };
 
@@ -861,7 +995,7 @@ export default function AgentBuilder() {
         // Load nodes and edges
         setNodes(workflow.nodes);
         setEdges(workflow.edges);
-        
+
         // Update node ID counter to avoid ID conflicts
         if (workflow.nodeIdCounter !== undefined) {
           nodeIdRef.current = workflow.nodeIdCounter;
@@ -890,7 +1024,7 @@ export default function AgentBuilder() {
       }
     };
     reader.readAsText(file);
-    
+
     // Reset the input so the same file can be selected again
     event.target.value = "";
   };
@@ -1573,6 +1707,97 @@ export default function AgentBuilder() {
                             fontSize: "12px",
                             fontWeight: "600",
                             color: "#f59e0b",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          Test Output:
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            color: "#e5e5e5",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {testOutput}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Generate Schema and Test buttons for LLM JSON Parser nodes */}
+                {node.data.nodeType === "LLM JSON Parser" && (
+                  <div style={{ marginTop: "20px" }}>
+                    <button
+                      onClick={generateSchema}
+                      disabled={isSchemaGenerating || !nodeParameters.schemaDescription}
+                      style={{
+                        width: "100%",
+                        padding: "10px 18px",
+                        background: "#8b5cf6",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor:
+                          isSchemaGenerating || !nodeParameters.schemaDescription
+                            ? "not-allowed"
+                            : "pointer",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        opacity:
+                          isSchemaGenerating || !nodeParameters.schemaDescription
+                            ? 0.6
+                            : 1,
+                        marginBottom: "10px",
+                      }}
+                    >
+                      {isSchemaGenerating
+                        ? "Generating Schema..."
+                        : "✨ Generate Schema"}
+                    </button>
+
+                    <button
+                      onClick={testLLMJSONParserNode}
+                      disabled={isTestLoading || !nodeParameters.jsonSchema}
+                      style={{
+                        width: "100%",
+                        padding: "10px 18px",
+                        background: "#10b981",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor:
+                          isTestLoading || !nodeParameters.jsonSchema
+                            ? "not-allowed"
+                            : "pointer",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        opacity:
+                          isTestLoading || !nodeParameters.jsonSchema ? 0.6 : 1,
+                      }}
+                    >
+                      {isTestLoading ? "Parsing..." : "🧪 Test Parser"}
+                    </button>
+
+                    {testOutput && (
+                      <div
+                        style={{
+                          marginTop: "15px",
+                          padding: "12px",
+                          background: "#0a0a0a",
+                          border: "1px solid #444",
+                          borderRadius: "6px",
+                          maxHeight: "200px",
+                          overflow: "auto",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            color: "#10b981",
                             marginBottom: "8px",
                           }}
                         >
